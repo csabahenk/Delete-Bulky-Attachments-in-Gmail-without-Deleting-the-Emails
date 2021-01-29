@@ -38,14 +38,14 @@ function processemails() {
     var size_att = sheet.getRange("D4:D4").getValues();
     var firstmsg = UserProperties.getProperty("firstmsgid");
     var isloaded = UserProperties.getProperty("isloaded");
-    var firstmessageId = getfirstmsgid();
+    var threads = getthreads();
+    var firstmessageId = getfirstmsgid(threads);
     spreadsheet.toast("Please wait while emails are processed to delete attachments. It could take few seconds", "Status", -1);
     if (size_att != '') {
 
         if (firstmsg == firstmessageId) {
             if (parseInt(isloaded)) {
 
-                var threads = getthreads();
                 var folder = getdocfolder();
                 var row = getFirstRow() + 1;
 
@@ -61,46 +61,59 @@ function processemails() {
                             var messages = threads[x].getMessages();
 
                             for (var y = 0; y < messages.length; y++) {
-
+                                var skip = sheet.getRange(row, 8).getValues()[0][0];
+                                if (skip.toLowerCase() == 'yes') {
+                                    spreadsheet.toast("Row " + row + ": skipping...", "Status", 5);
+                                    sheet.getRange(row, 5).setValue("Skipped");
+                                    row++;
+                                    continue;
+                                }
                                 var att = messages[y].getAttachments();
-
+                                if (att.length > 0) {
+				    // for a free account, two digits will do, the script's allotted runtime
+				    // runs out approximately at 20 rows
+                                    var rowfolder = folder.createFolder(itoa02(row));
+                                }
+                                var success = 1;
                                 for (var z = 0; z < att.length; z++) {
                                     try {
 
                                         /*Credits: Moving Gmail attachments to Google Drive. Thanks to Amit Agarwal(@labnol)*/
-
-                                        var file = folder.createFile(att[z]);
-                                        spreadsheet.toast("Successfully backed up " + file.getName(), "Status", 5);
+                                        var file = rowfolder.createFile(att[z]);
+                                        spreadsheet.toast("Row " + row + ": Successfully backed up " + file.getName(), "Status", 5);
                                         Utilities.sleep(1000);
                                     } catch (e) {
+                                        spreadsheet.toast("Row " + row + ": Failed to backed up " + file.getName(), "Status", 5);
 
                                         sheet.getRange(row, 5).setValue("Failure");
+                                        success = 0;
                                     }
                                 }
 
+                                if (success == 1) {
+                                    from = "From: " + messages[y].getFrom() + "<br/>";
+                                    date = "Date: " + messages[y].getDate() + "<br/>";
+                                    to = "To: " + messages[y].getTo() + "<br/>";
+                                    cc = "cc: " + messages[y].getCc() + "<br/>";
+                                    archivedata = "Original Email Information:<br/>*****************************************************************<br/>" +
+                                        from + date + to + cc +
+                                        "<br/>*****************************************************************<br/>";
 
-                                from = "From: " + messages[y].getFrom() + "<br/>";
-                                date = "Date: " + messages[y].getDate() + "<br/>";
-                                to = "To: " + messages[y].getTo() + "<br/>";
-                                cc = "cc: " + messages[y].getCc() + "<br/>";
-                                archivedata = "Original Email Information:<br/>*****************************************************************<br/>" +
-                                    from + date + to + cc +
-                                    "<br/>*****************************************************************<br/>";
 
 
+                                    GmailApp.sendEmail(Session.getActiveUser().getUserLoginId(),
+                                        messages[y].getSubject(), "", {
+                                            htmlBody: archivedata + messages[y].getBody()
+                                        });
+                                    spreadsheet.toast("Successfully created copy of email body along with sender information", "Status", 5);
 
-                                GmailApp.sendEmail(Session.getActiveUser().getUserLoginId(),
-                                    messages[y].getSubject(), "", {
-                                        htmlBody: archivedata + messages[y].getBody()
-                                    });
-                                spreadsheet.toast("Successfully created copy of email body along with sender information", "Status", 5);
+                                    //Delete Original message once copy is made to free up space
 
-                                //Delete Original message once copy is made to free up space
+                                    messages[y].moveToTrash();
 
-                                messages[y].moveToTrash();
-
-                                spreadsheet.toast("Trashed the original email along with attachments", "Status", 5);
-                                sheet.getRange(row, 5).setValue("Success");
+                                    spreadsheet.toast("Trashed the original email along with attachments", "Status", 5);
+                                    sheet.getRange(row, 5).setValue("Success");
+                                }
                                 row++;
 
                             }
@@ -169,7 +182,7 @@ function getEmails() {
 
         var threads = getthreads();
         var row = getFirstRow() + 1;
-        var firstmessageId = getfirstmsgid();
+        var firstmessageId = getfirstmsgid(threads);
         UserProperties.setProperty("firstmsgid", firstmessageId);
         UserProperties.setProperty("isloaded", 1);
         spreadsheet.toast("Loading emails..Please wait. It could take few seconds", "Status", -1);
@@ -191,7 +204,9 @@ function getEmails() {
                             attname = attname + att[z].getName() + ";";
                             sheet.getRange(row, 4).setValue(attname);
                         }
-
+                        if (m == 0) {
+                            sheet.getRange(row, 7).setValue('=hyperlink("' + threads[i].getPermalink() + '", "View")');
+                        }
                         row++;
                     }
                 } catch (error) {
@@ -218,8 +233,28 @@ function getFirstRow() {
     return start;
 }
 
-function getfirstmsgid() {
-    var threads = getthreads();
+/*
+ * poor man's sprintf
+ */
+function itoa02(n) {
+    if (n < 10) {
+        return '0' + n;
+    } else {
+        return '' + n;
+    }
+}
+
+function itoa03(n) {
+    if (n < 10) {
+        return '00' + n;
+    } else if (n < 100) {
+        return '0' + n;
+    } else {
+        return '' + n;
+    }
+}
+
+function getfirstmsgid(threads) {
     try {
         var message = threads[0].getMessages()[0];
         var firstmessageId = message.getId();
