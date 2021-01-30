@@ -186,6 +186,8 @@ function getEmails() {
         UserProperties.setProperty("firstmsgid", firstmessageId);
         UserProperties.setProperty("isloaded", 1);
         spreadsheet.toast("Loading emails..Please wait. It could take few seconds", "Status", -1);
+        sheet.getRange(7, 7).setValue("View Thread");
+        sheet.getRange(7, 8).setValue("Skip?");
         if (parseInt(threads.length) != 0) {
 
             for (var i = 0; i < threads.length; i++) {
